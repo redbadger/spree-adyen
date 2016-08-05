@@ -40,6 +40,7 @@ module Spree
       let(:payment_method) do
         Gateway::AdyenPayment.create(
           name: "Adyen",
+          environment: "test",
           preferred_merchant_account: "Test",
           preferred_api_username: "Test",
           preferred_api_password: "Test"
@@ -51,7 +52,7 @@ module Spree
           cc.name = "Washington"
           cc.number = "4111111111111111"
           cc.month = "06"
-          cc.year = "2016"
+          cc.year = Time.now.year + 1
           cc.verification_value = "737"
         end
       end

@@ -22,7 +22,7 @@ describe AdyenNotification do
     let(:notification) { subject.class.log(params.merge("success"=>"false")) }
 
     it "invalidates payment" do
-      expect(payment.reload).not_to be_invalid
+      expect(payment).not_to be_invalid
 
       notification.handle!
       expect(payment.reload).to be_invalid
