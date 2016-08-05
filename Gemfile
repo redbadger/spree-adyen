@@ -1,10 +1,11 @@
 source 'https://rubygems.org'
 
-gem 'spree', github: 'spree/spree'
+branch = '2-3-stable'
+gem 'spree', github: 'spree/spree', branch: branch
 gem 'coffee-rails', '~> 4.0.0'
 gem 'sass-rails', '~> 4.0.0'
 
-gem 'adyen', github: 'huoxito/adyen', branch: 'enhanced'
+gem 'adyen', '~> 2.2.0'
 gem 'pry-rails'
 
 gem 'vcr'
