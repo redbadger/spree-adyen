@@ -5,8 +5,8 @@ module Spree
     context "comply with spree payment/processing api" do
       context "void" do
         it "makes response.authorization returns the psp reference" do
-          response = double('Response', success?: true, psp_reference: "huhu")
-          subject.stub_chain(:provider, cancel_payment: response)
+          response = double('Response', authorised?: true, psp_reference: "huhu")
+          allow(subject.provider).to receive(:cancel_payment).and_return(response)
 
           expect(subject.void("huhu").authorization).to eq "huhu"
         end
@@ -14,8 +14,8 @@ module Spree
 
       context "capture" do
         it "makes response.authorization returns the psp reference" do
-          response = double('Response', success?: true, psp_reference: "huhu")
-          subject.stub_chain(:provider, capture_payment: response)
+          response = double('Response', authorised?: true, psp_reference: "huhu")
+          allow(subject.provider).to receive(:capture_payment).and_return response
 
           result = subject.capture(30000, "huhu")
           expect(result.authorization).to eq "huhu"

@@ -3,12 +3,14 @@ require 'spec_helper'
 module Spree
   describe Gateway::AdyenPayment do
     let(:response) do
-      double("Response", psp_reference: "psp", result_code: "accepted", success?: true)
+      res = double("Response", psp_reference: "psp", result_code: "accepted", authorised?: true)
+      def res.[](_); refusal_reason; end
+      res
     end
 
     context "successfully authorized" do
       before do
-        subject.stub_chain(:provider, authorise_payment: response)
+        allow(subject.provider).to receive(:execute_request).and_return(response)
       end
 
       it "adds processing api calls to response object" do
@@ -35,7 +37,7 @@ module Spree
 
         # Watch out as we're stubbing private method here to avoid reaching network
         # we might need to stub another method in future adyen gem versions
-        ::Adyen::API::PaymentService.any_instance.stub(make_payment_request: response)
+        allow(subject.provider).to receive(:execute_request).and_return(response)
       end
 
       let(:cc) { create(:credit_card) }
@@ -63,16 +65,17 @@ module Spree
 
     context "refused" do
       let(:response) do
-        double("Response", success?: false, result_code: "refused", refusal_reason: "Not allowed")
+        res = double("Response", authorised?: false, result_code: "Refused", refusal_reason: "010 Not allowed")
+        def res.[](_); refusal_reason; end
+        res
       end
 
       before do
-        subject.stub_chain(:provider, authorise_payment: response)
+        allow(subject.provider).to receive(:execute_request).and_return(response)
       end
 
       it "response obj print friendly message" do
         result = subject.authorize(30000, create(:credit_card))
-        expect(result.to_s).to include(response.result_code)
         expect(result.to_s).to include(response.refusal_reason)
       end
     end
@@ -86,7 +89,7 @@ module Spree
       end
 
       before do
-        expect(subject.provider).to receive(:authorise_payment).and_return response
+        expect(subject.provider).to receive(:authorise_payment_3dsecure).and_return response
         expect(subject.provider).to receive(:list_recurring_details).and_return details_response
         payment.source.gateway_customer_profile_id = nil
       end
@@ -124,7 +127,7 @@ module Spree
           cc.name = "Spree Dev Check"
           cc.verification_value = "737"
           cc.month = "06"
-          cc.year = "2016"
+          cc.year = Time.now.year + 1
           cc.number = "5555444433331111"
         end
       end
@@ -146,7 +149,7 @@ module Spree
 
     context "one click payment auth" do
       before do
-        subject.stub require_one_click_payment?: true
+        allow(subject).to receive(:require_one_click_payment?).and_return(true)
       end
 
       let(:credit_card) do
@@ -176,7 +179,7 @@ module Spree
       end
 
       context "doesnt require 3d secure" do
-        before { subject.stub require_3d_secure?: false }
+        before { allow(subject).to receive(:require_3d_secure?).and_return(false) }
 
         it "doesnt return browser info" do
           expect(subject.build_authorise_details payment).to_not have_key :browser_info
@@ -195,13 +198,13 @@ module Spree
         user = stub_model(LegacyUser, email: "spree@example.com", id: rand(50))
         stub_model(Order, id: 1, number: "R#{Time.now.to_i}-test", email: "spree@example.com", last_ip_address: "127.0.0.1", user: user)
       end
-      
+
       it "sets profiles" do
         credit_card = CreditCard.new do |cc|
           cc.name = "Washington Braga"
           cc.number = "5555444433331111"
-          cc.month = "06"
-          cc.year = "2016"
+          cc.month = '08'
+          cc.year = '2018'
           cc.verification_value = "737"
         end
 
@@ -228,7 +231,7 @@ module Spree
             cc.name = "Washington Braga"
             cc.number = "4212 3456 7890 1237"
             cc.month = "06"
-            cc.year = "2016"
+            cc.year = Time.now.year + 1
             cc.verification_value = "737"
           end
         end
@@ -267,16 +270,6 @@ module Spree
             payments = Payment.count
             expect { set_up_payment }.to raise_error Adyen::Enrolled3DError
             expect(payments).to eq Payment.count
-          end
-        end
-
-        it "authorises with payment 3d request" do
-          md = test_credentials["md"]
-          pa_response = test_credentials["pa_response"]
-          ip = "127.0.0.1"
-
-          VCR.use_cassette("3D-Secure-authorise") do
-            expect(subject.authorise3d(md, pa_response, ip, env)).to be_success
           end
         end
       end

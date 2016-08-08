@@ -9,12 +9,12 @@ module Spree
       preference :api_password, :string
       preference :merchant_account, :string
 
-      def merchant_account
-        ENV['ADYEN_MERCHANT_ACCOUNT'] || preferred_merchant_account
+      def client
+        @client ||= ::Adyen::REST.client
       end
 
-      def provider_class
-        ::Adyen::API
+      def merchant_account
+        ENV['ADYEN_MERCHANT_ACCOUNT'] || preferred_merchant_account
       end
 
       def provider
@@ -22,7 +22,7 @@ module Spree
         ::Adyen.configuration.api_password = (ENV['ADYEN_API_PASSWORD'] || preferred_api_password)
         ::Adyen.configuration.default_api_params[:merchant_account] = merchant_account
 
-        provider_class
+        client
       end
 
       # NOTE Override this with your custom logic for scenarios where you don't
@@ -40,14 +40,15 @@ module Spree
         value = { currency: gateway_options[:currency], value: amount }
         response = provider.capture_payment(response_code, value)
 
-        if response.success?
+        if response.authorised?
           def response.authorization; psp_reference; end
           def response.avs_result; {}; end
           def response.cvv_result; {}; end
+          def response.success?; authorised?; end
         else
           # TODO confirm the error response will always have these two methods
           def response.to_s
-            "#{result_code} - #{refusal_reason}"
+            self['refusal_reason']
           end
         end
 
@@ -60,12 +61,13 @@ module Spree
       def void(response_code, source, gateway_options = {})
         response = provider.cancel_payment(response_code)
 
-        if response.success?
+        if response.authorised?
           def response.authorization; psp_reference; end
+          def response.success?; authorised?; end
         else
           # TODO confirm the error response will always have these two methods
           def response.to_s
-            "#{result_code} - #{refusal_reason}"
+            self['refusal_reason']
           end
         end
         response
@@ -75,11 +77,12 @@ module Spree
         amount = { currency: gateway_options[:currency], value: credit_cents }
         response = provider.refund_payment response_code, amount
 
-        if response.success?
+        if response.authorised?
           def response.authorization; psp_reference; end
+          def response.success?; authorised?; end
         else
           def response.to_s
-            refusal_reason
+            self['refusal_reason']
           end
         end
 
@@ -89,24 +92,13 @@ module Spree
       def disable_recurring_contract(source)
         response = provider.disable_recurring_contract source.user_id, source.gateway_customer_profile_id
 
-        if response.success?
+        if response.authorised?
           source.update_column :gateway_customer_profile_id, nil
         else
           logger.error(Spree.t(:gateway_error))
           logger.error("  #{response.to_yaml}")
           raise Core::GatewayError.new(response.fault_message || response.refusal_reason)
         end
-      end
-
-      def authorise3d(md, pa_response, ip, env)
-        browser_info = {
-          browser_info: {
-            accept_header: env['HTTP_ACCEPT'],
-            user_agent: env['HTTP_USER_AGENT']
-          }
-        }
-
-        provider.authorise3d_payment(md, pa_response, ip, browser_info)
       end
 
       def build_authorise_details(payment)
@@ -130,19 +122,20 @@ module Spree
       private
 
         def set_up_contract(source, card, user, shopper_ip)
-          options = {
+          gateway_options = {
+            currency: Spree::Config.currency,
             order_id: "User-#{user.id}",
             customer_id: user.id,
             email: user.email,
-            ip: shopper_ip,
+            ip: shopper_ip
           }
 
-          response = authorize_on_card 0, source, options, card, { recurring: true }
+          response = authorize_on_card 0, source, gateway_options, card, { recurring: true }
 
-          if response.success?
+          if response.authorised?
             fetch_and_update_contract source, options[:customer_id]
           else
-            response.error
+            response['refusal_reason']
           end
         end
 
@@ -165,13 +158,14 @@ module Spree
           response = decide_and_authorise reference, amount, shopper, source, card, options
 
           # Needed to make the response object talk nicely with Spree payment/processing api
-          if response.success?
+          if response.authorised?
             def response.authorization; psp_reference; end
             def response.avs_result; {}; end
             def response.cvv_result; { 'code' => result_code }; end
+            def response.success?; authorised?; end
           else
             def response.to_s
-              "#{result_code} - #{refusal_reason}"
+              self['refusal_reason']
             end
           end
 
@@ -186,12 +180,22 @@ module Spree
             raise Core::GatewayError.new("You need to enter the card verificationv value")
           end
 
+          attributes = {
+            shopper_email: shopper[:email],
+            shopper_reference: shopper[:reference],
+            merchant_account: merchant_account,
+            amount: amount,
+            reference: reference,
+            card: card,
+            instant_capture: true
+          }
+
           if require_one_click_payment?(source, shopper) && recurring_detail_reference.present?
-            provider.authorise_one_click_payment reference, amount, shopper, card_cvc, recurring_detail_reference
+            provider.authorise_one_click_payment(attributes)
           elsif source.gateway_customer_profile_id.present?
-            provider.authorise_recurring_payment reference, amount, shopper, source.gateway_customer_profile_id
+            provider.authorise_recurring_payment(attributes)
           else
-            provider.authorise_payment reference, amount, shopper, card, options
+            provider.authorise_payment_3dsecure(attributes)
           end
         end
 
@@ -206,9 +210,19 @@ module Spree
             amount = build_amount_on_profile_creation payment
             options = build_authorise_details payment
 
-            response = provider.authorise_payment payment.order.number, amount, shopper, card, options
+            attributes = {
+              merchant_account: merchant_account,
+              amount: amount,
+              reference: payment.order.number,
+              card: card,
+              recurring: options && options[:recurring],
+              fraud_offset: nil,
+              instant_capture: true
+            }
 
-            if response.success?
+            response = provider.authorise_payment_3dsecure(attributes)
+
+            if response.authorised?
               fetch_and_update_contract payment.source, shopper[:reference]
 
               # Avoid this payment from being processed and so authorised again
@@ -216,12 +230,12 @@ module Spree
               # See Spree::Order::Checkout for transition events
               payment.started_processing!
 
-            elsif response.respond_to?(:enrolled_3d?) && response.enrolled_3d?
+            elsif response.redirect_shopper?
               raise Adyen::Enrolled3DError.new(response, payment.payment_method)
             else
               logger.error(Spree.t(:gateway_error))
               logger.error("  #{response.to_yaml}")
-              raise Core::GatewayError.new(response.fault_message || response.refusal_reason)
+              raise Core::GatewayError.new(response['refusal_reason'])
             end
 
             response

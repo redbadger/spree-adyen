@@ -9,7 +9,7 @@ module Spree
 
       let(:gateway) { Gateway::AdyenPaymentEncrypted.create!(name: "Adyen") }
 
-      let(:response) { double("Response", success?: true) }
+      let(:response) { double("Response", authorised?: true) }
 
       let(:details) do
         double("Details", details: [
@@ -18,7 +18,7 @@ module Spree
       end
 
       before do
-        expect(gateway.provider).to receive(:authorise_payment).and_return(response)
+        expect(gateway.provider).to receive(:authorise_payment_3dsecure).and_return(response)
         expect(gateway.provider).to receive(:list_recurring_details).and_return(details)
       end
 

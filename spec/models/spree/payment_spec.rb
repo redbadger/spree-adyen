@@ -14,13 +14,13 @@ module Spree
         double("Response",
           psp_reference: "psp",
           result_code: "accepted",
-          success?: true,
+          authorised?: true,
           additional_data: { "cardSummary" => "1111" }
         )
       end
 
       before do
-        expect(payment_method.provider).to receive(:authorise_payment).and_return(response)
+        expect(payment_method.provider).to receive(:authorise_payment_3dsecure).and_return(response)
         expect(payment_method.provider).to receive(:list_recurring_details).and_return(details_response)
       end
 
