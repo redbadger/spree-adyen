@@ -7,6 +7,7 @@ gem 'sass-rails', '~> 4.0.0'
 
 gem 'adyen', '~> 2.2.0'
 gem 'pry-rails'
+gem 'pry-byebug'
 
 gem 'vcr'
 gem 'webmock'
