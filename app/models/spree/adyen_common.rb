@@ -36,6 +36,35 @@ module Spree
         false
       end
 
+      def authorise_3d_secure(md, gateway_options)
+        attributes = {
+          merchant_account: merchant_account,
+          md: md,
+          pa_response: gateway_options[:pa_response],
+          shopper_ip: gateway_options[:ip],
+          browser_info: {
+            accept_header: gateway_options[:request_env] && gateway_options[:request_env]['HTTP_ACCEPT'],
+            user_agent: gateway_options[:request_env] && gateway_options[:request_env]['HTTP_USER_AGENT']
+          }
+        }
+
+        response = provider.authorise_payment_3dsecure(attributes)
+
+        if response.authorised?
+          def response.authorization; psp_reference; end
+          def response.avs_result; {}; end
+          def response.cvv_result; { 'code' => result_code }; end
+          def response.success?; authorised?; end
+        else
+          # TODO confirm the error response will always have these two methods
+          def response.to_s
+            self['refusal_reason']
+          end
+        end
+
+        response
+      end
+
       def capture(amount, response_code, gateway_options = {})
         value = { currency: gateway_options[:currency], value: amount }
         response = provider.capture_payment(response_code, value)
@@ -160,7 +189,7 @@ module Spree
           response = decide_and_authorise reference, amount, shopper, source, card, options
 
           # Needed to make the response object talk nicely with Spree payment/processing api
-          if response.authorised?
+          if response.authorised? || response.redirect_shopper?
             def response.authorization; psp_reference; end
             def response.avs_result; {}; end
             def response.cvv_result; { 'code' => result_code }; end
@@ -191,7 +220,7 @@ module Spree
             reference: reference,
             recurring: options && options[:recurring],
             browser_info: {
-              accept_header: options[:request_env] && options[:request_env] ['HTTP_ACCEPT'],
+              accept_header: options[:request_env] && options[:request_env]['HTTP_ACCEPT'],
               user_agent: options[:request_env] && options[:request_env]['HTTP_USER_AGENT']
             }
           }

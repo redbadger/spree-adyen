@@ -13,7 +13,7 @@ module Spree
     end
 
     def auto_capture?
-      false
+      true
     end
 
     def method_type
@@ -24,9 +24,17 @@ module Spree
       false
     end
 
-    def authorize(amount, source, gateway_options = {})
+    def purchase(amount, source, gateway_options = {})
       card = { encrypted: { json: source.encrypted_data } }
-      authorize_on_card amount, source, gateway_options, card
+
+      payment = source.payments.last
+
+      # Our Spree customisations include 3D Secure fields on the payment model
+      if payment.try(:md?)
+        authorise_3d_secure(payment.md, gateway_options)
+      else
+        authorize_on_card(amount, source, gateway_options, card)
+      end
     end
 
     # Do a symbolic authorization, e.g. 1 dollar, so that we can grab a recurring token
