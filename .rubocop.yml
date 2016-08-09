@@ -1,0 +1,11 @@
+AllCops:
+  DisplayStyleGuide: true
+
+Rails:
+  Enabled: true
+
+Metrics/LineLength:
+  Max: 180
+
+Documentation:
+  Enabled: false
