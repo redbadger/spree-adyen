@@ -155,6 +155,8 @@ module Spree
                       :ip => gateway_options[:ip],
                       :statement => "Order # #{gateway_options[:order_id]}" }
 
+          options[:request_env] = gateway_options[:request_env]
+
           response = decide_and_authorise reference, amount, shopper, source, card, options
 
           # Needed to make the response object talk nicely with Spree payment/processing api
@@ -189,8 +191,8 @@ module Spree
             reference: reference,
             recurring: options && options[:recurring],
             browser_info: {
-              accept_header: source.payments.last.request_env['HTTP_ACCEPT'],
-              user_agent: source.payments.last.request_env['HTTP_USER_AGENT']
+              accept_header: options[:request_env] && options[:request_env] ['HTTP_ACCEPT'],
+              user_agent: options[:request_env] && options[:request_env]['HTTP_USER_AGENT']
             }
           }
 

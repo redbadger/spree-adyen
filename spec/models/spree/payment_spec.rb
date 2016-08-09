@@ -18,11 +18,6 @@ module Spree
       )
     end
 
-    before do
-      request_env = { 'HTTP_ACCEPT' => 'accept', 'HTTP_USER_AGENT' => 'agent' }
-      allow_any_instance_of(Spree::Payment).to receive(:request_env).and_return(request_env)
-    end
-
     context "Adyen Payments" do
       let(:payment_method) do
         Gateway::AdyenPayment.create(
@@ -45,6 +40,9 @@ module Spree
       end
 
       before do
+        request_env = { 'HTTP_ACCEPT' => 'accept', 'HTTP_USER_AGENT' => 'agent' }
+        allow_any_instance_of(Spree::Payment).to receive(:request_env).and_return(request_env)
+
         expect(payment_method.provider).to receive(:authorise_payment).and_return(response)
         expect(payment_method.provider).to receive(:list_recurring_details).and_return(details_response)
       end

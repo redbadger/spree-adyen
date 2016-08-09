@@ -16,18 +16,12 @@ module Spree
       cc
     end
 
-    before do
-      request_env = { 'HTTP_ACCEPT' => 'accept', 'HTTP_USER_AGENT' => 'agent' }
-      allow_any_instance_of(Spree::Payment).to receive(:request_env).and_return(request_env)
-    end
-
     context "successfully authorized" do
-      before do
-        allow(subject.provider).to receive(:execute_request).and_return(response)
-      end
-
       it "adds processing api calls to response object" do
-        result = subject.authorize(30000, credit_card)
+        browser_info = { browser_info: { accept_header: 'accept', user_agent: 'agent' } }
+        expect(subject.provider).to receive(:authorise_payment).with(hash_including(browser_info)).and_return(response)
+
+        result = subject.authorize(30000, credit_card, request_env: { 'HTTP_ACCEPT' => 'accept', 'HTTP_USER_AGENT' => 'agent' })
 
         expect(result.authorization).to eq response.psp_reference
         expect(result.cvv_result['code']).to eq response.result_code
@@ -35,12 +29,13 @@ module Spree
     end
 
     context "ensure adyen validations goes fine" do
-      let(:options) do
+      let(:gateway_options) do
         { order_id: 17,
           email: "surf@uk.com",
           customer_id: 1,
           ip: "127.0.0.1",
-          currency: 'USD' }
+          currency: 'USD',
+          request_env: {} }
       end
 
       before do
@@ -55,21 +50,21 @@ module Spree
 
       it "adds processing api calls to response object" do
         expect {
-          subject.authorize(30000, credit_card, options)
+          subject.authorize(30000, credit_card, gateway_options)
         }.not_to raise_error
 
         credit_card.gateway_customer_profile_id = "123"
         expect {
-          subject.authorize(30000, credit_card, options)
+          subject.authorize(30000, credit_card, gateway_options)
         }.not_to raise_error
       end
 
       it "user order email as shopper reference when theres no user" do
         credit_card.gateway_customer_profile_id = "123"
-        options[:customer_id] = nil
+        gateway_options[:customer_id] = nil
 
         expect {
-          subject.authorize(30000, credit_card, options)
+          subject.authorize(30000, credit_card, gateway_options)
         }.not_to raise_error
       end
     end
@@ -86,7 +81,7 @@ module Spree
       end
 
       it "response obj print friendly message" do
-        result = subject.authorize(30000, credit_card)
+        result = subject.authorize(30000, credit_card, request_env: {})
         expect(result.to_s).to include(response.refusal_reason)
       end
     end
@@ -100,6 +95,9 @@ module Spree
       end
 
       before do
+        request_env = { 'HTTP_ACCEPT' => 'accept', 'HTTP_USER_AGENT' => 'agent' }
+        allow_any_instance_of(Spree::Payment).to receive(:request_env).and_return(request_env)
+
         expect(subject.provider).to receive(:authorise_payment).and_return response
         expect(subject.provider).to receive(:list_recurring_details).and_return details_response
         payment.source.gateway_customer_profile_id = nil
@@ -182,7 +180,7 @@ module Spree
 
       it "adds processing api calls to response object" do
         expect(subject.provider).to receive(:authorise_one_click_payment).and_return response
-        result = subject.authorize(30000, credit_card)
+        result = subject.authorize(30000, credit_card, request_env: {})
       end
     end
 

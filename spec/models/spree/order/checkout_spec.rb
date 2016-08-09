@@ -28,11 +28,6 @@ module Spree
         double('List', details: [card], references: ['123432423'])
       end
 
-      before do
-        request_env = { 'HTTP_ACCEPT' => 'accept', 'HTTP_USER_AGENT' => 'agent' }
-        allow_any_instance_of(Spree::Payment).to receive(:request_env).and_return(request_env)
-      end
-
       it 'successfully processes non-3D Secure payments using the AdyenPaymentEncrypted gateway' do
         expect(order.state).to eq 'payment'
 
@@ -42,6 +37,7 @@ module Spree
           p.payment_method = gateway
         end
 
+        expect(payment).to receive(:gateway_options).and_return(request_env: {})
         expect(gateway.provider).to receive(:authorise_payment).and_return(response)
         payment.process!
 
