@@ -4,6 +4,14 @@ module Spree
 
     preference :public_key, :string
 
+    def self.supports?(cc_type)
+      cc_type == 'adyen_encrypted'
+    end
+
+    def provider_class
+      self.class
+    end
+
     def auto_capture?
       false
     end
@@ -13,7 +21,7 @@ module Spree
     end
 
     def payment_profiles_supported?
-      true
+      false
     end
 
     def authorize(amount, source, gateway_options = {})
