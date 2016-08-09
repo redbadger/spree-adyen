@@ -183,44 +183,60 @@ module Spree
           attributes = {
             shopper_email: shopper[:email],
             shopper_reference: shopper[:reference],
+            shopper_ip: shopper[:ip],
             merchant_account: merchant_account,
             amount: amount,
             reference: reference,
-            card: card,
-            instant_capture: true
+            recurring: options && options[:recurring],
+            browser_info: {
+              accept_header: source.request_env['HTTP_ACCEPT'],
+              user_agent: source.request_env['HTTP_USER_AGENT']
+            }
           }
+
+          attributes = card[:encrypted] ? attributes.merge(additional_data: { card: card }) : attributes.merge(card: card)
 
           if require_one_click_payment?(source, shopper) && recurring_detail_reference.present?
             provider.authorise_one_click_payment(attributes)
-          elsif source.gateway_customer_profile_id.present?
+          elsif options[:recurring]
             provider.authorise_recurring_payment(attributes)
           else
-            provider.authorise_payment_3dsecure(attributes)
+            res = provider.authorise_payment(attributes)
+            res
           end
         end
 
+        # FOLLOWING METHODS UNUSED - We've disabled payment profile support as it requires an additional payment
+        # authorisation. As we use auto-capture, we'd need to void the payment immediately afterwards which is
+        # currently unimplemented.
+
         def create_profile_on_card(payment, card)
           unless payment.source.gateway_customer_profile_id.present?
-
+            ip = payment.order.last_ip_address
             shopper = { :reference => (payment.order.user_id.present? ? payment.order.user_id : payment.order.email),
                         :email => payment.order.email,
-                        :ip => payment.order.last_ip_address,
+                        :ip => ip,
                         :statement => "Order # #{payment.order.number}" }
 
             amount = build_amount_on_profile_creation payment
             options = build_authorise_details payment
 
             attributes = {
+              shopper_ip: ip,
               merchant_account: merchant_account,
               amount: amount,
               reference: payment.order.number,
-              card: card,
               recurring: options && options[:recurring],
               fraud_offset: nil,
-              instant_capture: true
+              browser_info: {
+                accept_header: payment.request_env['HTTP_ACCEPT'],
+                user_agent: payment.request_env['HTTP_USER_AGENT']
+              }
             }
 
-            response = provider.authorise_payment_3dsecure(attributes)
+            attributes = card[:encrypted] ? attributes.merge(additional_data: { card: card }) : attributes.merge(card: card)
+
+            response = provider.authorise_payment(attributes)
 
             if response.authorised?
               fetch_and_update_contract payment.source, shopper[:reference]
@@ -245,19 +261,16 @@ module Spree
         def fetch_and_update_contract(source, shopper_reference)
           # Adyen doesn't give us the recurring reference (token) so we
           # need to reach the api again to grab the token
-          list = provider.list_recurring_details(shopper_reference)
-
-          unless list.details.present?
-            raise RecurringDetailsNotFoundError
-          end
+          list = provider.list_recurring_details(merchant_account: merchant_account, shopper_reference: shopper_reference)
+          fail RecurringDetailsNotFoundError unless list.references.present?
 
           source.update_columns(
-            month: list.details.last[:card][:expiry_date].month,
-            year: list.details.last[:card][:expiry_date].year,
-            name: list.details.last[:card][:holder_name],
+            month: list.details.last[:card_expiry_month],
+            year: list.details.last[:card_expiry_year],
+            name: list.details.last[:card_holder_name],
             cc_type: list.details.last[:variant],
-            last_digits: list.details.last[:card][:number],
-            gateway_customer_profile_id: list.details.last[:recurring_detail_reference]
+            last_digits: list.details.last[:card_number],
+            gateway_customer_profile_id: list.references.last
           )
         end
     end

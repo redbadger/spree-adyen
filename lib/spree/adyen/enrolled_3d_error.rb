@@ -6,9 +6,9 @@ module Spree
       def initialize(response, gateway)
         @response = response
 
-        @issuer_url = response.issuer_url
-        @pa_request = response.pa_request
-        @md = response.md
+        @issuer_url = response['issuer_url']
+        @pa_request = response['pa_request']
+        @md = response['md']
         @gateway = gateway
       end
 
