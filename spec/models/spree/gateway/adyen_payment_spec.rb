@@ -8,6 +8,26 @@ module Spree
       res
     end
 
+    let(:three_d_secure_response) do
+      res = double(
+        'Response',
+        psp_reference: 'psp',
+        result_code: 'rejected',
+        authorised?: false,
+        redirect_shopper?: true,
+        md: '123',
+        issuer_url: 'https://3d-secure.com/secure',
+        pa_request: ''
+      )
+
+      allow(res).to receive(:[]).with('refusal_reason').and_return(nil)
+      allow(res).to receive(:[]).with('md').and_return(res.md)
+      allow(res).to receive(:[]).with('issuer_url').and_return(res.issuer_url)
+      allow(res).to receive(:[]).with('pa_request').and_return(res.pa_request)
+
+      res
+    end
+
     let(:credit_card) do
       cc = create(:credit_card)
       cc.payments << create(:payment, amount: 30000, state: 'checkout')
@@ -25,6 +45,24 @@ module Spree
 
         expect(result.authorization).to eq response.psp_reference
         expect(result.cvv_result['code']).to eq response.result_code
+      end
+    end
+
+    context '3D Secure authorisation required' do
+      it 'returns a 3D Secure response for 3D Secure enabled cards' do
+        browser_info = { browser_info: { accept_header: 'accept', user_agent: 'agent' } }
+        expect(subject.provider).to receive(:authorise_payment).with(hash_including(browser_info)).and_return(three_d_secure_response)
+
+        result = subject.authorize(30000, credit_card, request_env: { 'HTTP_ACCEPT' => 'accept', 'HTTP_USER_AGENT' => 'agent' })
+
+        expect(result.success?).to be_falsey
+
+        expect(result['md']).to eq three_d_secure_response.md
+        expect(result['issuer_url']).to eq three_d_secure_response.issuer_url
+        expect(result['pa_request']).to eq three_d_secure_response.pa_request
+
+        expect(result.authorization).to eq three_d_secure_response.psp_reference
+        expect(result.cvv_result['code']).to eq three_d_secure_response.result_code
       end
     end
 
@@ -71,7 +109,7 @@ module Spree
 
     context "refused" do
       let(:response) do
-        res = double("Response", authorised?: false, result_code: "Refused", refusal_reason: "010 Not allowed")
+        res = double("Response", authorised?: false, redirect_shopper?: false, result_code: "Refused", refusal_reason: "010 Not allowed")
         allow(res).to receive(:[]).with('refusal_reason').and_return(res.refusal_reason)
         res
       end
