@@ -2,38 +2,25 @@ require 'spec_helper'
 
 module Spree
   describe Payment do
-    shared_examples "set up a profile on payment creation" do
-      let(:order) { create(:order) }
+    let(:order) { create(:order) }
 
-      let(:details_response) do
-        card = { card: { expiry_date: 1.year.from_now, number: "1111" }, recurring_detail_reference: "123432423" }
-        double("List", details: [card])
-      end
+    let(:details_response) do
+      card = { card_expiry_date: 8, card_expiry_year: 1.year.from_now, card_number: '1111' }
+      double('List', details: [card], references: ['123432423'])
+    end
 
-      let(:response) do
-        double("Response",
-          psp_reference: "psp",
-          result_code: "accepted",
-          authorised?: true,
-          additional_data: { "cardSummary" => "1111" }
-        )
-      end
+    let(:response) do
+      double("Response",
+        psp_reference: "psp",
+        result_code: "accepted",
+        authorised?: true,
+        additional_data: { "cardSummary" => "1111" }
+      )
+    end
 
-      before do
-        expect(payment_method.provider).to receive(:authorise_payment_3dsecure).and_return(response)
-        expect(payment_method.provider).to receive(:list_recurring_details).and_return(details_response)
-      end
-
-      specify do
-        Payment.create! do |p|
-          p.order_id = order.id
-          p.amount = order.total
-          p.source = credit_card
-          p.payment_method = payment_method
-        end
-
-        expect(credit_card.reload.gateway_customer_profile_id).not_to be_empty
-      end
+    before do
+      request_env = { 'HTTP_ACCEPT' => 'accept', 'HTTP_USER_AGENT' => 'agent' }
+      allow_any_instance_of(Spree::Payment).to receive(:request_env).and_return(request_env)
     end
 
     context "Adyen Payments" do
@@ -57,7 +44,21 @@ module Spree
         end
       end
 
-      include_examples "set up a profile on payment creation"
+      before do
+        expect(payment_method.provider).to receive(:authorise_payment).and_return(response)
+        expect(payment_method.provider).to receive(:list_recurring_details).and_return(details_response)
+      end
+
+      it 'set up a profile on payment creation' do
+        Payment.create! do |p|
+          p.order_id = order.id
+          p.amount = order.total
+          p.source = credit_card
+          p.payment_method = payment_method
+        end
+
+        expect(credit_card.reload.gateway_customer_profile_id).not_to be_empty
+      end
 
       it "voids payments" do
         payment = Payment.create! do |p|
@@ -101,7 +102,21 @@ module Spree
         end
       end
 
-      include_examples "set up a profile on payment creation"
+      before do
+        expect(payment_method.provider).to_not receive(:authorise_payment)
+        expect(payment_method.provider).to_not receive(:list_recurring_details)
+      end
+
+      it 'does not set up a payment profile on creation' do
+        Payment.create! do |p|
+          p.order_id = order.id
+          p.amount = order.total
+          p.source = credit_card
+          p.payment_method = payment_method
+        end
+
+        expect(credit_card.reload.gateway_customer_profile_id).to be_nil
+      end
     end
   end
 end

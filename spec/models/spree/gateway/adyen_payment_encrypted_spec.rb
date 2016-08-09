@@ -8,13 +8,26 @@ module Spree
       res
     end
 
+    let(:credit_card) do
+      cc = create(:credit_card)
+      cc.payments << create(:payment, amount: 30000, state: 'checkout')
+      cc.save!
+
+      cc
+    end
+
+    before do
+      request_env = { 'HTTP_ACCEPT' => 'accept', 'HTTP_USER_AGENT' => 'agent' }
+      allow_any_instance_of(Spree::Payment).to receive(:request_env).and_return(request_env)
+    end
+
     context "successfully authorized" do
       before do
         allow(subject.provider).to receive(:execute_request).and_return(response)
       end
 
       it "adds processing api calls to response object" do
-        result = subject.authorize(30000, create(:credit_card))
+        result = subject.authorize(30000, credit_card)
 
         expect(result.authorization).to eq response.psp_reference
         expect(result.cvv_result['code']).to eq response.result_code
@@ -40,25 +53,23 @@ module Spree
         allow(subject.provider).to receive(:execute_request).and_return(response)
       end
 
-      let(:cc) { create(:credit_card) }
-
       it "adds processing api calls to response object" do
         expect {
-          subject.authorize(30000, cc, options)
+          subject.authorize(30000, credit_card, options)
         }.not_to raise_error
 
-        cc.gateway_customer_profile_id = "123"
+        credit_card.gateway_customer_profile_id = "123"
         expect {
-          subject.authorize(30000, cc, options)
+          subject.authorize(30000, credit_card, options)
         }.not_to raise_error
       end
 
       it "user order email as shopper reference when theres no user" do
-        cc.gateway_customer_profile_id = "123"
+        credit_card.gateway_customer_profile_id = "123"
         options[:customer_id] = nil
 
         expect {
-          subject.authorize(30000, cc, options)
+          subject.authorize(30000, credit_card, options)
         }.not_to raise_error
       end
     end
@@ -75,7 +86,7 @@ module Spree
       end
 
       it "response obj print friendly message" do
-        result = subject.authorize(30000, create(:credit_card))
+        result = subject.authorize(30000, credit_card)
         expect(result.to_s).to include(response.refusal_reason)
       end
     end
@@ -84,19 +95,19 @@ module Spree
       let(:payment) { create(:payment) }
 
       let(:details_response) do
-        card = { card: { expiry_date: 1.year.from_now, number: "1111" }, recurring_detail_reference: "123432423" }
-        double("List", details: [card])
+        card = { card_expiry_date: 8, card_expiry_year: 1.year.from_now, card_number: '1111' }
+        double('List', details: [card], references: ['123432423'])
       end
 
       before do
-        expect(subject.provider).to receive(:authorise_payment_3dsecure).and_return response
+        expect(subject.provider).to receive(:authorise_payment).and_return response
         expect(subject.provider).to receive(:list_recurring_details).and_return details_response
         payment.source.gateway_customer_profile_id = nil
       end
 
       it "authorizes payment to set up recurring transactions" do
         subject.create_profile payment
-        expect(payment.source.gateway_customer_profile_id).to eq details_response.details.last[:recurring_detail_reference]
+        expect(payment.source.gateway_customer_profile_id).to eq details_response.references.last
       end
 
       it "builds authorise details options" do
@@ -153,17 +164,20 @@ module Spree
       end
 
       let(:credit_card) do
-        hash = {
+        cc = create(
+          :credit_card,
           gateway_customer_profile_id: 1,
           verification_value: 1,
-          name: "Spree",
+          name: 'Spree',
           number: 123,
-          month: 06,
-          year: 2016,
-          encrypted_data: ''
-        }
+          month: 8,
+          year: 1.year.from_now
+        )
 
-        double("CC", hash)
+        cc.payments << create(:payment, amount: 30000, state: 'checkout')
+        cc.save!
+
+        cc
       end
 
       it "adds processing api calls to response object" do

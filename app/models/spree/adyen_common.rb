@@ -189,8 +189,8 @@ module Spree
             reference: reference,
             recurring: options && options[:recurring],
             browser_info: {
-              accept_header: source.request_env['HTTP_ACCEPT'],
-              user_agent: source.request_env['HTTP_USER_AGENT']
+              accept_header: source.payments.last.request_env['HTTP_ACCEPT'],
+              user_agent: source.payments.last.request_env['HTTP_USER_AGENT']
             }
           }
 
@@ -201,8 +201,7 @@ module Spree
           elsif options[:recurring]
             provider.authorise_recurring_payment(attributes)
           else
-            res = provider.authorise_payment(attributes)
-            res
+            provider.authorise_payment(attributes)
           end
         end
 

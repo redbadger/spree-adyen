@@ -5,40 +5,50 @@ module Spree
   describe Order do
     context 'with an associated user' do
       let(:order) { OrderWalkthrough.up_to(:delivery) }
-      let(:credit_card) { create(:credit_card) }
+      let(:credit_card) { create(:credit_card, cc_type: 'adyen_encrypted') }
 
-      let(:gateway) { Gateway::AdyenPaymentEncrypted.create!(name: "Adyen") }
+      let(:gateway) do
+        Gateway::AdyenPaymentEncrypted.create(
+          name: 'Adyen',
+          environment: 'test',
+          preferred_merchant_account: 'Test',
+          preferred_api_username: 'Test',
+          preferred_api_password: 'Test'
+        )
+      end
 
-      let(:response) { double("Response", authorised?: true) }
+      let(:response) do
+        res = double('Response', psp_reference: 'psp', result_code: 'accepted', authorised?: true)
+        def res.[](_); refusal_reason; end
+        res
+      end
 
       let(:details) do
-        double("Details", details: [
-          { card: { number: "1111", expiry_date: 1.year.from_now }, recurring_detail_reference: 123 }
-        ])
+        card = { card_expiry_date: 8, card_expiry_year: 1.year.from_now, card_number: '1111' }
+        double('List', details: [card], references: ['123432423'])
       end
 
       before do
-        expect(gateway.provider).to receive(:authorise_payment_3dsecure).and_return(response)
-        expect(gateway.provider).to receive(:list_recurring_details).and_return(details)
+        request_env = { 'HTTP_ACCEPT' => 'accept', 'HTTP_USER_AGENT' => 'agent' }
+        allow_any_instance_of(Spree::Payment).to receive(:request_env).and_return(request_env)
       end
 
-      it "transitions to complete just fine" do
-        expect(order.state).to eq "payment"
+      it 'successfully processes non-3D Secure payments using the AdyenPaymentEncrypted gateway' do
+        expect(order.state).to eq 'payment'
 
         payment = order.payments.create! do |p|
           p.amount = order.total
           p.source = credit_card
           p.payment_method = gateway
         end
-        payment.complete
+
+        expect(gateway.provider).to receive(:authorise_payment).and_return(response)
+        payment.process!
+
         order.payment_total = payment.amount
-
-
         order.next!
-        expect(order.state).to eq "confirm"
 
-        order.next!
-        expect(order.state).to eq "complete"
+        expect(order.state).to eq 'complete'
       end
     end
   end
