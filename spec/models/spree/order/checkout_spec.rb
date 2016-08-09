@@ -19,7 +19,7 @@ module Spree
 
       let(:response) do
         res = double('Response', psp_reference: 'psp', result_code: 'accepted', authorised?: true)
-        def res.[](_); refusal_reason; end
+        allow(res).to receive(:[]).with('refusal_reason').and_return(nil)
         res
       end
 

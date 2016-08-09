@@ -4,7 +4,7 @@ module Spree
   describe Gateway::AdyenPayment do
     let(:response) do
       res = double("Response", psp_reference: "psp", result_code: "accepted", authorised?: true)
-      def res.[](_); refusal_reason; end
+      allow(res).to receive(:[]).with('refusal_reason').and_return(nil)
       res
     end
 
@@ -72,7 +72,7 @@ module Spree
     context "refused" do
       let(:response) do
         res = double("Response", authorised?: false, result_code: "Refused", refusal_reason: "010 Not allowed")
-        def res.[](_); refusal_reason; end
+        allow(res).to receive(:[]).with('refusal_reason').and_return(res.refusal_reason)
         res
       end
 
