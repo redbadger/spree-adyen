@@ -9,7 +9,7 @@ module Spree
     end
 
     let(:credit_card) do
-      cc = create(:credit_card)
+      cc = create(:credit_card, last_digits: nil, encrypted_data: 'encrypted_card_data')
       cc.payments << create(:payment, amount: 30000, state: 'checkout')
       cc.save!
 
@@ -139,7 +139,8 @@ module Spree
           cc.verification_value = "737"
           cc.month = "06"
           cc.year = Time.now.year + 1
-          cc.number = "5555444433331111"
+          cc.number = nil
+          cc.encrypted_data = 'encrypted_card_data'
         end
       end
 
@@ -150,7 +151,7 @@ module Spree
       end
 
       it "brings last recurring contract info", external: true do
-        source.number = "5555444433331111"
+        source.encrypted_data = nil
 
         VCR.use_cassette "add_contract" do
           subject.add_contract source, user, shopper_ip
@@ -169,7 +170,8 @@ module Spree
           gateway_customer_profile_id: 1,
           verification_value: 1,
           name: 'Spree',
-          number: 123,
+          number: nil,
+          encrypted_data: 'encrypted_card_data',
           month: 8,
           year: 1.year.from_now
         )
@@ -217,10 +219,11 @@ module Spree
       it "sets profiles" do
         credit_card = CreditCard.new do |cc|
           cc.name = "Washington Braga"
-          cc.number = "5555444433331111"
+          cc.number = nil
           cc.month = '08'
           cc.year = '2018'
           cc.verification_value = "737"
+          cc.encrypted_data = 'encrypted_card_data'
         end
 
         payment = Payment.new do |p|
@@ -244,10 +247,11 @@ module Spree
         let(:credit_card) do
           CreditCard.create! do |cc|
             cc.name = "Washington Braga"
-            cc.number = "4212 3456 7890 1237"
+            cc.number = nil
             cc.month = "06"
             cc.year = Time.now.year + 1
             cc.verification_value = "737"
+            cc.encrypted_data = 'encrypted_card_data'
           end
         end
 
